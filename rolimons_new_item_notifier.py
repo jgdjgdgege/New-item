@@ -79,16 +79,17 @@ def fetch_rendered_text() -> str:
         return text
 
 
-# 各アイテムカードは "<名前>By<作者>Price<価格>Favorites<件数>Created<日付>Updated<日付>"
-# の並びで表示される。Favorites/Created/Updatedまで含めて1件分として消費することで、
-# 次のアイテム名を誤って巻き込まないようにする。
+# 各アイテムカードは名前・By・作者・Price・価格・Favorites・件数・Created・日付・Updated・日付が
+# それぞれ改行区切りで並んでいる(実機ログで確認済み)。ラベルと値の間に改行が挟まってもマッチ
+# するよう、各要素の間に \s* を入れている。Favorites/Created/Updatedまで含めて1件分として消費
+# することで、次のアイテム名を誤って巻き込まないようにする。
 # ("UGC Items"「Roblox Items」の下部プレビュー欄はFavorites/Created/Updatedを持たないため、
 #  このパターンには自然とマッチせず、結果的にメイン一覧だけが対象になる)
 ITEM_PATTERN = re.compile(
-    r"(?P<name>.+?)By(?P<creator>.+?)Price(?P<price>Off Sale|Free|[\d,]+)"
-    r"Favorites(?P<favorites>[\d,]+)"
-    r"Created(?P<created>[A-Za-z]+ \d{1,2}, \d{4})"
-    r"Updated(?P<updated>[A-Za-z]+ \d{1,2}, \d{4})",
+    r"(?P<name>.+?)\s*By\s*(?P<creator>.+?)\s*Price\s*(?P<price>Off Sale|Free|[\d,]+)"
+    r"\s*Favorites\s*(?P<favorites>[\d,]+)"
+    r"\s*Created\s*(?P<created>[A-Za-z]+\s+\d{1,2},\s*\d{4})"
+    r"\s*Updated\s*(?P<updated>[A-Za-z]+\s+\d{1,2},\s*\d{4})",
     re.DOTALL,
 )
 
@@ -99,9 +100,8 @@ ONLY_ROBLOX_CREATED = True
 
 def parse_items(raw_text: str):
     """ページ本文テキストから「アイテム名 / 作者 / 価格」のリストを抽出する"""
-    marker = "Newest Created"
-    idx = raw_text.find(marker)
-    body = raw_text[idx:] if idx != -1 else raw_text
+    marker_match = re.search(r"Newest\s*Created", raw_text)
+    body = raw_text[marker_match.start():] if marker_match else raw_text
 
     items = []
     for m in ITEM_PATTERN.finditer(body):
