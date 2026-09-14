@@ -1,0 +1,41 @@
+name: Rolimons新着アイテム通知
+
+on:
+  schedule:
+    # 15分おきに実行(GitHub Actionsのcronは混雑時に数分〜十数分遅延することがあります)
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}  # 手動実行ボタンも使えるようにする
+
+# 状態ファイルをコミットし直すため書き込み権限を付与
+permissions:
+  contents: write
+
+jobs:
+  check-new-items:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Pythonをセットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 依存パッケージをインストール
+        run: |
+          pip install playwright requests
+          playwright install --with-deps chromium
+
+      - name: 新着アイテムをチェックして通知
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python rolimons_new_item_notifier.py
+
+      - name: 状態ファイルの変更をコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add rolimons_seen_items.json
+          git diff --staged --quiet || git commit -m "chore: update seen items state"
+          git push
