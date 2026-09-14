@@ -4,7 +4,12 @@ on:
   schedule:
     # 15分おきに実行(GitHub Actionsのcronは混雑時に数分〜十数分遅延することがあります)
     - cron: "*/15 * * * *"
-  workflow_dispatch: {}  # 手動実行ボタンも使えるようにする
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: "デバッグモードで実行する(取得内容を表示するだけで通知はしない)"
+        type: boolean
+        default: false
 
 # 状態ファイルをコミットし直すため書き込み権限を付与
 permissions:
@@ -30,7 +35,12 @@ jobs:
       - name: 新着アイテムをチェックして通知
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python rolimons_new_item_notifier.py
+        run: |
+          if [ "${{ inputs.debug_mode }}" = "true" ]; then
+            python rolimons_new_item_notifier.py --debug
+          else
+            python rolimons_new_item_notifier.py
+          fi
 
       - name: 状態ファイルの変更をコミット
         run: |
