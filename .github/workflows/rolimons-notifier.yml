@@ -1,19 +1,25 @@
 name: Rolimons新着アイテム通知
 
 on:
-  schedule:
-    # 15分おきに実行(GitHub Actionsのcronは混雑時に数分〜十数分遅延することがあります)
-    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       debug_mode:
         description: "デバッグモードで実行する(取得内容を表示するだけで通知はしない)"
         type: boolean
         default: false
+      test_webhook_only:
+        description: "Webhookのテストのみ行う(スクレイピングをせず固定メッセージを送信)"
+        type: boolean
+        default: false
 
 # 状態ファイルをコミットし直すため書き込み権限を付与
 permissions:
   contents: write
+
+# 実行の重複を防ぐ(前の実行が終わるまで次を待たせる。押し出しキャンセルはしない)
+concurrency:
+  group: rolimons-notifier
+  cancel-in-progress: false
 
 jobs:
   check-new-items:
@@ -32,7 +38,28 @@ jobs:
           pip install playwright requests
           playwright install --with-deps chromium
 
+      - name: Webhookテスト送信のみ
+        if: ${{ inputs.test_webhook_only == true }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::error::DISCORD_WEBHOOK_URL が空です。Secretsの設定名(大文字小文字含む)を確認してください。"
+            exit 1
+          fi
+          http_status=$(curl -s -o response.txt -w "%{http_code}" -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"content": "✅ Webhookテスト送信です。これが届いていればDiscordの設定は正常です。"}')
+          echo "HTTPステータス: $http_status"
+          echo "レスポンス本文:"
+          cat response.txt
+          if [ "$http_status" -ge 400 ]; then
+            echo "::error::Discordへの送信に失敗しました(ステータス $http_status)。上のレスポンス内容を確認してください。"
+            exit 1
+          fi
+
       - name: 新着アイテムをチェックして通知
+        if: ${{ inputs.test_webhook_only != true }}
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
@@ -43,13 +70,29 @@ jobs:
           fi
 
       - name: 状態ファイルの変更をコミット
+        if: ${{ inputs.test_webhook_only != true }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if [ -f rolimons_seen_items.json ]; then
             git add rolimons_seen_items.json
-            git diff --staged --quiet || git commit -m "chore: update seen items state"
-            git push
+            if ! git diff --staged --quiet; then
+              git commit -m "chore: update seen items state"
+              success=false
+              for i in 1 2 3 4 5; do
+                if git push; then
+                  success=true
+                  break
+                fi
+                echo "push失敗、最新を取り込んでリトライします ($i回目)"
+                git pull --rebase --autostash origin main
+                sleep 5
+              done
+              if [ "$success" != "true" ]; then
+                echo "::error::状態ファイルのpushに5回失敗しました。次回実行時に一部アイテムが再通知される可能性があります。"
+                exit 1
+              fi
+            fi
           else
             echo "状態ファイルが存在しないためコミットをスキップします(デバッグモード実行時など)"
           fi
