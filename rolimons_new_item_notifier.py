@@ -103,6 +103,16 @@ def parse_items(raw_text: str):
     marker_match = re.search(r"Newest\s*Created", raw_text)
     body = raw_text[marker_match.start():] if marker_match else raw_text
 
+    # 「Newest Created」というソートラベルとページ番号一覧(1 2 3 4 5 … 967 など)は
+    # 本文中に複数回出現することがあり、そのままだとアイテム名に巻き込まれてしまうため、
+    # 出現箇所をすべて取り除く
+    body = re.sub(
+        r"Newest\s*Created(?:\s*(?:\d{1,4}|…|\.\.\.))+",
+        "",
+        body,
+        flags=re.DOTALL,
+    )
+
     items = []
     for m in ITEM_PATTERN.finditer(body):
         name = m.group("name").strip()
