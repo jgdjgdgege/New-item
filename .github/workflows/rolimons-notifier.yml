@@ -1,6 +1,9 @@
 name: Rolimons新着アイテム通知
 
 on:
+  schedule:
+    # 15分おきに実行(GitHub Actionsのcronは混雑時に数分〜十数分遅延することがあります)
+    - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       debug_mode:
